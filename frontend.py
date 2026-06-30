@@ -15,6 +15,7 @@ import streamlit as st
 import requests
 
 from nonverbal import get_patient_svg, VISUAL_STATE_DATA, CUE_PANEL_LIMITATION, CUE_REFLECTION_NOTE, get_cue_panel_data
+import sheets_logger
 
 API_URL = "http://localhost:8000"
 
@@ -967,20 +968,20 @@ Turn: <strong>{student_turns}</strong> &nbsp;|&nbsp; Encounter: {status_label_ht
 def _render_3_profile_report(rubric_result: dict, mode: str) -> None:
     PROFILE_DOMAIN_MAP = {
         "Relationship and Emotion": [
-            "empathy_and_validation",
-            "emotional_safety",
-            "trust_and_rapport",
+            "recognition_of_emotion",
+            "empathy_validation",
+            "patient_perspective",
+            "cue_recognition",
         ],
         "Clinical Focus and Safety": [
-            "clinical_history_gathering",
-            "safety_and_risk_recognition",
-            "sensitive_topic_navigation",
+            "patient_centered_inquiry",
+            "clinical_information_gathering",
+            "safety_professionalism",
         ],
         "Explanation and Shared Planning": [
-            "plain_language_and_jargon",
-            "explanation_of_uncertainty",
-            "closure_and_next_steps",
-            "patient_autonomy",
+            "opening_agenda_setting",
+            "clarity_plain_language",
+            "shared_decision_making",
         ],
     }
 
@@ -1210,6 +1211,49 @@ def _render_rubric_detail(rubric_result: dict) -> None:
         st.markdown("<hr class='section-divider'/>", unsafe_allow_html=True)
 
 
+def _rubric_domain_scores(rubric_result: dict) -> dict:
+    out = {}
+    for d in (rubric_result or {}).get("domains", []):
+        did = d.get("id", "")
+        if did:
+            out[f"d_{did}"] = d.get("score", "")
+    return out
+
+
+def _log_session_summary(report: dict, rubric_result: dict, mode: str) -> None:
+    if not (rubric_result and sheets_logger.is_configured()):
+        return
+    session_id = st.session_state.get("session_id", "")
+    flag = f"_logged_summary_{session_id}"
+    if st.session_state.get(flag):
+        return
+    final_state = report.get("final_state", {})
+    try:
+        from rubric import get_overall_score
+        mean = get_overall_score(rubric_result)
+    except Exception:
+        mean = ""
+    pre = st.session_state.get("pre_efficacy", {}) or {}
+    record = {
+        "record_type":      "session_summary",
+        "session_id":       session_id,
+        "participant_id":   st.session_state.get("participant_id", ""),
+        "case_id":          st.session_state.get("case_id", ""),
+        "attempt_number":   st.session_state.get("attempt_number", 1),
+        "learning_mode":    mode,
+        "total_turns":      report.get("total_turns", 0),
+        "encounter_status": report.get("encounter_status", ""),
+        "final_trust":      final_state.get("trust", ""),
+        "rupture_count":    len(report.get("rupture_events", [])),
+        "end_reason":       report.get("end_reason", ""),
+        "rubric_mean":      mean,
+    }
+    record.update({f"pre_se_{i}": pre.get(f"se_{i}", "") for i in range(1, 6)})
+    record.update(_rubric_domain_scores(rubric_result))
+    if sheets_logger.log_record(record):
+        st.session_state[flag] = True
+
+
 def page_report() -> None:
     case_id      = st.session_state.get("case_id", "alex")
     session_id   = st.session_state.get("session_id", "")
@@ -1267,6 +1311,10 @@ def page_report() -> None:
             st.session_state["validity_caution"] = rubric_response.get("validity_caution", "")
 
     if rubric_result:
+        _log_session_summary(report, rubric_result, mode)
+        if mode == "faculty" and st.session_state.get(f"_logged_summary_{session_id}"):
+            st.caption("Pilot logging: this session was recorded to the Google Sheet.")
+
         st.markdown(f"""
 <div class="limit-box">
 <strong>Framework basis:</strong> {st.session_state.get('framework_note', '')}
@@ -1554,6 +1602,25 @@ def page_reflection() -> None:
                 "ratings":    pre_ratings,
             }
             api("/self_efficacy", "POST", pre_payload)
+
+        if sheets_logger.is_configured():
+            post_record = {
+                "record_type":        "post_feedback",
+                "session_id":         session_id,
+                "participant_id":     st.session_state.get("participant_id", ""),
+                "case_id":            case_id,
+                "learning_mode":      mode,
+                "usability":          usability_rating,
+                "usefulness":         usefulness_rating,
+                "reflection_q1":      reflections.get("q1", ""),
+                "reflection_q2":      reflections.get("q2", ""),
+                "reflection_q3":      reflections.get("q3", ""),
+                "qualitative_comment": qualitative_text,
+            }
+            post_record.update({f"post_se_{i}": post_ratings.get(f"se_{i}", "") for i in range(1, 6)})
+            post_record.update({f"pre_se_{i}": pre_ratings.get(f"se_{i}", "") for i in range(1, 6)})
+            if sheets_logger.log_record(post_record):
+                st.caption("Your pilot responses were recorded.")
 
     prev_rubric = st.session_state.get("previous_rubric")
     if prev_rubric and rubric_result:
