@@ -53,7 +53,8 @@ COLUMNS = (
     + [f"pre_se_{i}" for i in range(1, 6)]
     + [f"post_se_{i}" for i in range(1, 6)]
     + ["usability", "usefulness",
-       "reflection_q1", "reflection_q2", "reflection_q3", "qualitative_comment"]
+       "reflection_q1", "reflection_q2", "reflection_q3", "qualitative_comment",
+       "transcript"]
 )
 
 WORKSHEET_NAME = "sessions"

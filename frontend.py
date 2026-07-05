@@ -521,7 +521,7 @@ def page_landing() -> None:
         '<div class="limit-box">'
         '• All patient cases are <strong>fictional</strong> — please don\'t type any real personal or medical details.<br/>'
         '• Feedback is <strong>AI-generated and formative</strong>: a practice aid for communication, not a real assessment and not medical advice.<br/>'
-        '• This is an early tool being tested. Your typed messages and ratings are recorded <strong>anonymously</strong> to help improve it.'
+        '• This is an early tool being tested. <strong>The whole conversation you type, plus your ratings, are saved anonymously</strong> to help improve it.'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -1211,6 +1211,21 @@ def _rubric_domain_scores(rubric_result: dict) -> dict:
     return out
 
 
+def _format_transcript(report: dict) -> str:
+    lines = []
+    intro = st.session_state.get("start_data", {}).get("patient_intro", "")
+    if intro:
+        lines.append(f"[0] Patient (opening): {intro.strip()}")
+    for t in report.get("timeline", []):
+        turn = t.get("turn", "?")
+        student = (t.get("student_message") or "").strip()
+        patient = (t.get("patient_reply") or "").strip()
+        lines.append(f"[{turn}] Student: {student}")
+        if patient:
+            lines.append(f"    Patient: {patient}")
+    return "\n".join(lines)[:40000]
+
+
 def _log_session_summary(report: dict, rubric_result: dict, mode: str) -> None:
     if not (rubric_result and sheets_logger.is_configured()):
         return
@@ -1241,6 +1256,7 @@ def _log_session_summary(report: dict, rubric_result: dict, mode: str) -> None:
     }
     record.update({f"pre_se_{i}": pre.get(f"se_{i}", "") for i in range(1, 6)})
     record.update(_rubric_domain_scores(rubric_result))
+    record["transcript"] = _format_transcript(report)
     if sheets_logger.log_record(record):
         st.session_state[flag] = True
 
@@ -1835,14 +1851,13 @@ overall agreement is 70–85%, limited by inherent classification ambiguity.""",
         (
             "Data collected",
             """Session data includes: an optional self-entered participant code, case ID, attempt
-number, detected communication tags, rubric scores, pre/post self-efficacy ratings, rupture
-events, usability/usefulness ratings, and free-text reflections.
+number, the full conversation transcript, detected communication tags, rubric scores, pre/post
+self-efficacy ratings, rupture events, usability/usefulness ratings, and free-text reflections.
 
 No real patient data is collected and all cases are fictional. When Google Sheets logging is
-configured, a per-session summary row (scores and ratings — not identifiers) is appended to a
-private spreadsheet the researcher controls; the full turn-by-turn transcript is kept in the
-app's local database, which on the free hosting tier is ephemeral. Participants may also export
-their own session as JSON/CSV.""",
+configured, each session appends rows to a private spreadsheet the researcher controls —
+including the scores, ratings, and the full conversation transcript, with no identifiers unless
+a participant voluntarily types one. Participants may also export their own session as JSON/CSV.""",
         ),
         (
             "Suggested pilot use",
