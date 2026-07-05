@@ -8,6 +8,7 @@ import io
 import os
 import sys
 import time
+import uuid
 import subprocess
 from datetime import datetime
 
@@ -427,7 +428,14 @@ def api(endpoint: str, method: str = "GET", payload: dict = None, timeout: int =
         r = requests.post(url, json=payload, timeout=timeout) if method == "POST" else requests.get(url, timeout=timeout)
         if r.status_code == 200:
             return r.json()
-        st.error(f"API error ({r.status_code}): {r.json().get('detail', 'Unknown error')}")
+        try:
+            detail = r.json().get("detail", "")
+        except Exception:
+            detail = ""
+        if r.status_code == 429:
+            st.warning(detail or "This tool is at capacity right now. Please try again later.")
+        else:
+            st.error(f"API error ({r.status_code}): {detail or 'Unknown error'}")
         return None
     except requests.ConnectionError:
         st.error("Cannot connect to the simulation backend (localhost:8000). Is the FastAPI server running?")
@@ -689,6 +697,7 @@ It requires familiarity with safe-messaging guidelines and mental health inquiry
             "learning_mode":           mode,
             "enable_high_risk_cases":  enable_high_risk,
             "pre_efficacy":            pre_efficacy,
+            "browser_id":              st.session_state.get("browser_id", ""),
         })
         if data:
             st.session_state["start_data"]       = data
@@ -698,6 +707,12 @@ It requires familiarity with safe-messaging guidelines and mental health inquiry
             st.session_state["visual_state"]     = "guarded"
             st.session_state["disclosure_layer"] = 1
             st.session_state["encounter_status"] = "active"
+        else:
+            render_header(f"Case Brief: {case['name']}, {case['age']}", case["case_id"], step_page="case_brief")
+            st.info("This session could not be started (see the message above). If a daily limit was reached, please try again tomorrow.")
+            if st.button("Back to Cases"):
+                navigate_to("setup")
+            return
 
     data = st.session_state.get("start_data", {})
 
@@ -1953,29 +1968,28 @@ def _ensure_backend() -> bool:
     return False
 
 
-def _password_ok() -> bool:
-    expected = _get_secret("APP_PASSWORD")
-    if not expected:
-        return True
-    if st.session_state.get("_auth_ok"):
-        return True
-
-    st.markdown("#### This tool is password protected")
-    pw = st.text_input("Access password", type="password")
-    if st.button("Enter"):
-        if pw == str(expected):
-            st.session_state["_auth_ok"] = True
-            st.rerun()
-        else:
-            st.error("Incorrect password.")
-    return False
+def _ensure_browser_id() -> str:
+    bid = st.session_state.get("browser_id")
+    if bid:
+        return bid
+    try:
+        bid = st.query_params.get("bid")
+    except Exception:
+        bid = None
+    if not bid:
+        bid = uuid.uuid4().hex[:16]
+        try:
+            st.query_params["bid"] = bid
+        except Exception:
+            pass
+    st.session_state["browser_id"] = bid
+    return bid
 
 
 def main() -> None:
     inject_css()
     _bridge_secrets_to_env()
-    if not _password_ok():
-        return
+    _ensure_browser_id()
     with st.spinner("Starting the simulation backend..."):
         backend_up = _ensure_backend()
     if not backend_up:

@@ -1,6 +1,6 @@
 
 import uuid
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional
 
 import anthropic as _anthropic
@@ -107,6 +107,7 @@ class StartRequest(BaseModel):
     learning_mode:           str  = "independent"
     enable_high_risk_cases:  bool = False
     pre_efficacy:            dict = {}
+    browser_id:              str  = ""
 
 class SelfEfficacyRequest(BaseModel):
     session_id:   str
@@ -405,6 +406,18 @@ def list_cases() -> CasesResponse:
         })
     return CasesResponse(cases=cases)
 
+MAX_SESSIONS_PER_DAY    = int(_os.getenv("MAX_SESSIONS_PER_DAY", "30"))
+MAX_PER_BROWSER_PER_DAY = int(_os.getenv("MAX_PER_BROWSER_PER_DAY", "2"))
+MAX_TURNS_PER_SESSION   = int(_os.getenv("MAX_TURNS_PER_SESSION", "10"))
+
+_daily_session_counts: dict = {}
+_browser_day_counts:   dict = {}
+
+
+def _today() -> str:
+    return date.today().isoformat()
+
+
 @app.post("/start", response_model=StartResponse, tags=["Simulation"])
 def start_session(request: StartRequest = StartRequest()) -> StartResponse:
     """Create a new rehearsal session with a chosen patient case."""
@@ -426,6 +439,25 @@ def start_session(request: StartRequest = StartRequest()) -> StartResponse:
                 f"Case '{patient.id}' involves advanced clinical content including suicidal ideation. "
                 "Set enable_high_risk_cases=true to proceed. "
                 "Faculty review is recommended before using this case in a pilot."
+            ),
+        )
+
+    today = _today()
+    if _daily_session_counts.get(today, 0) >= MAX_SESSIONS_PER_DAY:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "This tool has reached its daily testing capacity. Please check back tomorrow — "
+                "and thanks for helping test it."
+            ),
+        )
+    bid = (request.browser_id or "").strip()
+    if bid and _browser_day_counts.get((today, bid), 0) >= MAX_PER_BROWSER_PER_DAY:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"You've reached the limit of {MAX_PER_BROWSER_PER_DAY} practice sessions per day "
+                "from this browser. Please come back tomorrow."
             ),
         )
 
@@ -458,6 +490,10 @@ def start_session(request: StartRequest = StartRequest()) -> StartResponse:
     }
 
     save_session(session_id, session_data)
+
+    _daily_session_counts[today] = _daily_session_counts.get(today, 0) + 1
+    if bid:
+        _browser_day_counts[(today, bid)] = _browser_day_counts.get((today, bid), 0) + 1
 
     return StartResponse(
         session_id=session_id,
@@ -593,6 +629,15 @@ def chat(request: ChatRequest) -> ChatResponse:
 
     session["conversation_history"].append({"role": "assistant", "content": patient_reply})
     session["recent_tags"] = (recent_tags + [tags])[-REPEATED_PRESSURE_WINDOW:]
+
+    if new_encounter_status != "ended" and (len(session["timeline"]) + 1) >= MAX_TURNS_PER_SESSION:
+        new_encounter_status = "ended"
+        session["encounter_status"] = "ended"
+        if not session.get("end_reason"):
+            session["end_reason"] = (
+                f"This session reached its limit of {MAX_TURNS_PER_SESSION} messages. "
+                "Ending here so you can review your feedback."
+            )
 
     tag_counts = session.get("tag_counts", {})
     for tag in tags:
