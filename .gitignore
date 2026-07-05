@@ -7,6 +7,9 @@
 gcp*.json
 client_secret*.json
 *-key.json
+trustmed-*.json
+*.iam.gserviceaccount.com.json
+streamlit_cloud_secrets.toml
 
 # Local database (regenerated at runtime)
 *.db
