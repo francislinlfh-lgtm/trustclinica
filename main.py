@@ -407,7 +407,7 @@ def list_cases() -> CasesResponse:
     return CasesResponse(cases=cases)
 
 MAX_SESSIONS_PER_DAY    = int(_os.getenv("MAX_SESSIONS_PER_DAY", "30"))
-MAX_PER_BROWSER_PER_DAY = int(_os.getenv("MAX_PER_BROWSER_PER_DAY", "2"))
+MAX_PER_BROWSER_PER_DAY = int(_os.getenv("MAX_PER_BROWSER_PER_DAY", "10"))
 MAX_TURNS_PER_SESSION   = int(_os.getenv("MAX_TURNS_PER_SESSION", "10"))
 
 _daily_session_counts: dict = {}
