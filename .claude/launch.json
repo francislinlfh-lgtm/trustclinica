@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "trustmed",
+      "runtimeExecutable": "C:/Users/Francis Lin/OneDrive/Desktop/TrustMed/venv/Scripts/streamlit.exe",
+      "runtimeArgs": ["run", "frontend.py", "--server.headless", "true", "--server.port", "8501"],
+      "port": 8501,
+      "autoPort": false
+    }
+  ]
+}

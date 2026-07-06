@@ -1930,7 +1930,8 @@ def _get_secret(key: str):
 
 
 def _bridge_secrets_to_env() -> None:
-    for key in ("ANTHROPIC_API_KEY", "APP_PASSWORD"):
+    for key in ("ANTHROPIC_API_KEY", "APP_PASSWORD", "CLAUDE_MODEL",
+                "MAX_SESSIONS_PER_DAY", "MAX_PER_BROWSER_PER_DAY", "MAX_TURNS_PER_SESSION"):
         val = _get_secret(key)
         if val and not os.environ.get(key):
             os.environ[key] = val
@@ -1964,19 +1965,9 @@ def _ensure_backend() -> bool:
 
 def _ensure_browser_id() -> str:
     bid = st.session_state.get("browser_id")
-    if bid:
-        return bid
-    try:
-        bid = st.query_params.get("bid")
-    except Exception:
-        bid = None
     if not bid:
         bid = uuid.uuid4().hex[:16]
-        try:
-            st.query_params["bid"] = bid
-        except Exception:
-            pass
-    st.session_state["browser_id"] = bid
+        st.session_state["browser_id"] = bid
     return bid
 
 
