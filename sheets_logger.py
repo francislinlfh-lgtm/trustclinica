@@ -24,6 +24,7 @@ Configure via Streamlit secrets:
 
 import os
 import json
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -122,14 +123,23 @@ def _stringify(value) -> str:
 
 
 def log_record(record: dict) -> bool:
-    """Append one row built from COLUMNS. Returns True on success, never raises."""
+    """Append one row built from COLUMNS. Returns True on success, never raises.
+
+    Retries once after a short pause, since the most common failure is a
+    transient Google Sheets API rate-limit rather than a permanent error.
+    """
     ws = _get_worksheet()
     if ws is None:
         return False
-    try:
-        full = {**record, "logged_at": datetime.utcnow().isoformat()}
-        row = [_stringify(full.get(col, "")) for col in COLUMNS]
-        ws.append_row(row, value_input_option="USER_ENTERED")
-        return True
-    except Exception:
-        return False
+    full = {**record, "logged_at": datetime.utcnow().isoformat()}
+    row = [_stringify(full.get(col, "")) for col in COLUMNS]
+    for attempt in range(2):
+        try:
+            ws.append_row(row, value_input_option="USER_ENTERED")
+            return True
+        except Exception:
+            if attempt == 0:
+                time.sleep(1.5)
+                continue
+            return False
+    return False

@@ -281,6 +281,18 @@ section.main > div.block-container {{
 .step-done   {{ background:#dbe7d8;color:#2e5a2e; }}
 .step-active {{ background:#1a4480;color:#ffffff; }}
 .step-todo   {{ background:#eef1f5;color:#9aa6b4; }}
+@media (max-width: 640px) {{
+    section.main > div.block-container {{ padding-left:0.85rem !important; padding-right:0.85rem !important; }}
+    .page-band {{ margin-left:-0.85rem !important; margin-right:-0.85rem !important; padding:18px 16px 14px 16px !important; }}
+    .page-band h1 {{ font-size:1.6rem !important; line-height:1.2 !important; }}
+    .page-band p {{ font-size:0.8rem !important; }}
+    [data-testid="stHorizontalBlock"] {{ flex-wrap:wrap !important; }}
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] {{ min-width:100% !important; flex:1 1 100% !important; }}
+    [data-testid="stMetricValue"] {{ font-size:1.2rem !important; }}
+    .card {{ padding:14px 16px !important; }}
+    .step-strip {{ gap:4px !important; }}
+    .step-pill {{ font-size:0.66rem !important; padding:2px 8px !important; }}
+}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -1230,8 +1242,8 @@ def _log_session_summary(report: dict, rubric_result: dict, mode: str) -> None:
     if not (rubric_result and sheets_logger.is_configured()):
         return
     session_id = st.session_state.get("session_id", "")
-    flag = f"_logged_summary_{session_id}"
-    if st.session_state.get(flag):
+    attempt_flag = f"_log_attempted_{session_id}"
+    if st.session_state.get(attempt_flag):
         return
     final_state = report.get("final_state", {})
     try:
@@ -1257,8 +1269,9 @@ def _log_session_summary(report: dict, rubric_result: dict, mode: str) -> None:
     record.update({f"pre_se_{i}": pre.get(f"se_{i}", "") for i in range(1, 6)})
     record.update(_rubric_domain_scores(rubric_result))
     record["transcript"] = _format_transcript(report)
-    if sheets_logger.log_record(record):
-        st.session_state[flag] = True
+    ok = sheets_logger.log_record(record)
+    st.session_state[attempt_flag] = True
+    st.session_state[f"_log_ok_{session_id}"] = ok
 
 
 def page_report() -> None:
@@ -1308,7 +1321,8 @@ def page_report() -> None:
 
     rubric_result = st.session_state.get("rubric_result")
     if rubric_result is None:
-        st.info("Your encounter summary is shown above. Generating the formative rubric now — this usually takes 20–30 seconds.")
+        status_ph = st.empty()
+        status_ph.info("Your encounter summary is shown above. Generating the formative rubric now — this usually takes 20–30 seconds.")
         with st.spinner("Scoring communication across the rubric domains..."):
             rubric_response = api(f"/rubric/{session_id}", timeout=90)
         if rubric_response:
@@ -1316,11 +1330,26 @@ def page_report() -> None:
             st.session_state["rubric_result"]    = rubric_result
             st.session_state["framework_note"]   = rubric_response.get("framework_note", "")
             st.session_state["validity_caution"] = rubric_response.get("validity_caution", "")
+        status_ph.empty()
 
     if rubric_result:
         _log_session_summary(report, rubric_result, mode)
-        if mode == "faculty" and st.session_state.get(f"_logged_summary_{session_id}"):
-            st.caption("Pilot logging: this session was recorded to the Google Sheet.")
+        if sheets_logger.is_configured() and st.session_state.get(f"_log_attempted_{session_id}"):
+            if st.session_state.get(f"_log_ok_{session_id}"):
+                if mode == "faculty":
+                    st.caption("Pilot logging: this session was recorded to the Google Sheet.")
+            else:
+                st.warning(
+                    "We couldn't automatically save this session. So your feedback isn't lost, "
+                    "please download it below and send it to whoever shared this link with you."
+                )
+                fallback = _build_json_export(session_id, {}, None)
+                st.download_button(
+                    "Download my session (JSON)",
+                    data=json.dumps(fallback, indent=2),
+                    file_name=f"trustmed_{case_id}_{session_id[:8]}.json",
+                    mime="application/json",
+                )
 
         st.markdown(f"""
 <div class="limit-box">

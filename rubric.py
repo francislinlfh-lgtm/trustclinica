@@ -519,6 +519,7 @@ def score_session(
         response = client.messages.create(
             model=RUBRIC_MODEL,
             max_tokens=4000,
+            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()

@@ -369,6 +369,7 @@ def _llm_tags(message: str) -> Set[str]:
         response = client.messages.create(
             model=EVALUATOR_MODEL,
             max_tokens=200,
+            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
@@ -396,6 +397,7 @@ def _llm_tags_with_rationale(message: str) -> Dict[str, Any]:
         response = client.messages.create(
             model=EVALUATOR_MODEL,
             max_tokens=600,
+            temperature=0,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = response.content[0].text.strip()
